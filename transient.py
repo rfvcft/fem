@@ -98,7 +98,7 @@ def create_mesh(draw=True):
         cfv.showAndWait()
     return coords, edof, dofs, bdofs, elementmarkers
 
-coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=True)
+coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
 
 NELEM, NDOF = len(edof), len(dofs)
 k_copper = 385
@@ -135,7 +135,6 @@ for i in np.arange(0, NELEM):
 #     fe = h*L_nodes/2
 #     fb[edges_flux[i] - 1] += fe
 #     fb[edges_flux[i+1] - 1] += fe
-#     print(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
 
 for element in edof:
         in_boundary_qn = [False, False, False]
@@ -158,21 +157,23 @@ for element in edof:
                     fb[element[i]-1] += h*Le/2
                     fb[element[j]-1] += h*Le/2
 
-a = 18 * np.ones((NDOF, 1))
-dT = 1
-tf = 1
-rho_nylon = 8930
-rho_copper = 1100
+a = (18 + 273.15) * np.ones((NDOF, 1))
+dt = 0.01
+tf = 10
+rho_nylon = 1100
+rho_copper = 8930
+c_nylon = 1500
+c_copper = 386
 C = np.zeros((NDOF, NDOF))
 for i in np.arange(0, NELEM):
     if elementmarkers[i] == MARK_NYLON: # Nylon
-        Ce = plantml(ex[i], ey[i], rho_nylon)
+        Ce = plantml(ex[i], ey[i], rho_nylon * c_nylon)
     else: # Copper
-        Ce = plantml(ex[i], ey[i], rho_copper)
+        Ce = plantml(ex[i], ey[i], rho_copper * c_copper)
     cfc.assem(edof[i,:], C, Ce)
 
-for t in np.arange(0, tf, step=dT):
-    a = np.linalg.inv(C + dT*K) @ C @ a + dT * fb
+for t in np.arange(0, tf, step=dt):
+    a = np.linalg.solve(C + dt*K, C @ a + dt*fb)
 
 
 # bcPresc = np.array([], 'i')
