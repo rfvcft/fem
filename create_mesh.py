@@ -13,7 +13,7 @@ MARK_FLUX = 2
 MARK_NOFLUX = 3
 
 def create_mesh(draw=True):
-    L = 5 * 10e-6
+    L = 5 * 10e-3
     a = 0.1*L
     b = 0.1*L
     c = 0.3*L
@@ -56,9 +56,9 @@ def create_mesh(draw=True):
     g.spline([0, 1], marker=MARK_NOFLUX)
     g.spline([1, 2], marker=MARK_NOFLUX)
     g.spline([2, 3], marker=MARK_FLUX)
-    for i in range(3, 12):
+    for i in range(3, 13):
         g.spline([i, i+1], marker=MARK_CONVECTION)
-    g.spline([12, 13], marker=MARK_NOFLUX)
+    # g.spline([12, 13], marker=MARK_NOFLUX)
     g.spline([13, 14], marker=MARK_NOFLUX)
     g.spline([14, 0], marker=MARK_NOFLUX)
 
@@ -70,8 +70,6 @@ def create_mesh(draw=True):
     g.surface([0] + list(range(15, 21)) + [14], marker=MARK_NYLON) # Nylon
     g.surface(list(range(1, 14)) + list(reversed(range(15, 21))), marker=MARK_COPPER) # Copper
 
-    if draw:
-        cfv.draw_geometry(g)
     # cfv.showAndWait()
 
     mesh = cfm.GmshMesh(g)
@@ -81,11 +79,13 @@ def create_mesh(draw=True):
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
-    cfv.figure()
 
     # Draw the mesh.
 
     if draw:
+        # cfv.figure()
+        cfv.draw_geometry(g)
+        # cfv.figure()
         cfv.drawMesh(
             coords=coords,
             edof=edof,
@@ -97,14 +97,14 @@ def create_mesh(draw=True):
         cfv.showAndWait()
     return coords, edof, dofs, bdofs, elementmarkers
 
-coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
+coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=True)
 
 NELEM, NDOF = len(edof), len(dofs)
 k_copper = 385
 k_nylon = 0.26
 alpha_c = 40
 h = 10e5
-T_inf = 18 #+ 273.15
+T_inf = 18 + 273.15
 
 
 K = np.zeros((NDOF, NDOF))
@@ -119,23 +119,48 @@ for i in np.arange(0, NELEM):
         Ke = cfc.flw2te(ex[i], ey[i], [1], k_copper*np.eye(2))
     cfc.assem(edof[i,:], K, Ke)
 
-edges_conv = bdofs[MARK_CONVECTION]
-for i in range(len(edges_conv) - 1):
-    L_nodes = dist(coords[edges_conv[i]], coords[edges_conv[i + 1]])
-    Kce = alpha_c * L_nodes / 6 * np.array([[2, -1], [-1, 2]])
-    fe = T_inf*alpha_c*L_nodes/2 #* np.ones((2, 1))
-    cfc.assem(np.array([edges_conv[i], edges_conv[i+1]]), K, Kce)
-    fb[edges_conv[i]] += fe
-    fb[edges_conv[i + 1]] += fe
+# edges_conv = bdofs[MARK_CONVECTION]
+# for i in range(len(edges_conv) - 1):
+# # for i in range(11):
+#     L_nodes = dist(coords[edges_conv[i] - 1], coords[edges_conv[i + 1] - 1])
+#     Kce = alpha_c * L_nodes / 6 * np.array([[2, 1], [1, 2]])
+#     fe = T_inf*alpha_c*L_nodes/2 #* np.ones((2, 1))
+#     cfc.assem(np.array([edges_conv[i], edges_conv[i+1]]), K, Kce)
+#     fb[edges_conv[i] - 1] += fe
+#     fb[edges_conv[i + 1] - 1] += fe
 
-edges_flux = bdofs[MARK_FLUX]
-for i in range(len(edges_flux) - 1):
-    L_nodes = dist(coords[edges_flux[i]], coords[edges_flux[i + 1]])
-    fe = h*L_nodes/2
-    fb[edges_flux[i]] += fe
-    fb[edges_flux[i+1]] += fe
+for element in edof:
+        Kce = np.zeros((2, 2))
+        in_boundary_qn = [False, False, False]
+        in_boundary_qh = [False, False, False]
+        for i in range(3):
+            if element[i] in bdofs[MARK_CONVECTION]:
+                in_boundary_qn[i] = True
+            if element[i] in bdofs[MARK_FLUX]:
+                in_boundary_qh[i] = True
+        for i in range(3):
+            for j in range(i + 1, 3):
+                if in_boundary_qn[i] and in_boundary_qn[j]:
+                    Le = dist(coords[element[i] - 1], coords[element[j] - 1])
+                    Kce = alpha_c*Le/6*np.array([[2, 1], [1, 2]])
+                    fb[element[i]-1] += alpha_c*Le*T_inf/2
+                    fb[element[j]-1] += alpha_c*Le*T_inf/2
+                    cfc.assem(np.array([element[i], element[j]]), K, Kce)
+                if in_boundary_qh[i] and in_boundary_qh[j]:
+                    Le = dist(coords[element[i] - 1], coords[element[j] - 1])
+                    fb[element[i]-1] += h*Le/2
+                    fb[element[j]-1] += h*Le/2
 
-print(fb)
+
+# edges_flux = bdofs[MARK_FLUX]
+# print(edges_flux)
+# for i in range(len(edges_flux) - 1):
+#     L_nodes = dist(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
+#     fe = h*L_nodes/2
+#     fb[edges_flux[i] - 1] += fe
+#     fb[edges_flux[i+1] - 1] += fe
+#     print(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
+
 bcPresc = np.array([], 'i')
 a, r = cfc.solveq(K, fb, bcPresc)
 cfv.draw_nodal_values_shaded(a, coords, edof)
