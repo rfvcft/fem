@@ -4,12 +4,13 @@ import calfem.vis_mpl as cfv
 import calfem.core as cfc
 import numpy as np
 from matplotlib import pyplot as plt
+from math import dist
 
-MARK_NYLON = 1
-MARK_COPPER = 2
-MARK_CONVECTION = 11
-MARK_FLUX = 12
-MARK_NOFLUX = 13
+MARK_NYLON = 11
+MARK_COPPER = 12
+MARK_CONVECTION = 1
+MARK_FLUX = 2
+MARK_NOFLUX = 3
 
 def create_mesh(draw=True):
     L = 5 * 10e-6
@@ -76,7 +77,7 @@ def create_mesh(draw=True):
     mesh = cfm.GmshMesh(g)
     mesh.elType = 2
     mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 1
+    mesh.elSizeFactor = 0.05
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -96,15 +97,15 @@ def create_mesh(draw=True):
         cfv.showAndWait()
     return coords, edof, dofs, bdofs, elementmarkers
 
-coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=True)
-
-print(bdofs)
-print(len(bdofs))
+coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
 
 NELEM, NDOF = len(edof), len(dofs)
 k_copper = 385
 k_nylon = 0.26
-alpha = 40
+alpha_c = 40
+h = 10e5
+T_inf = 18 #+ 273.15
+
 
 K = np.zeros((NDOF, NDOF))
 fb = np.zeros((NDOF, 1))
@@ -112,8 +113,32 @@ fb = np.zeros((NDOF, 1))
 ex, ey = cfc.coord_extract(edof, coords, dofs)
 
 for i in np.arange(0, NELEM):
-    if elementmarkers[i] == 1: # Nylon
+    if elementmarkers[i] == MARK_NYLON: # Nylon
         Ke = cfc.flw2te(ex[i], ey[i], [1], k_nylon*np.eye(2))
     else: # Copper
         Ke = cfc.flw2te(ex[i], ey[i], [1], k_copper*np.eye(2))
     cfc.assem(edof[i,:], K, Ke)
+
+edges_conv = bdofs[MARK_CONVECTION]
+for i in range(len(edges_conv) - 1):
+    L_nodes = dist(coords[edges_conv[i]], coords[edges_conv[i + 1]])
+    Kce = alpha_c * L_nodes / 6 * np.array([[2, -1], [-1, 2]])
+    fe = T_inf*alpha_c*L_nodes/2 #* np.ones((2, 1))
+    cfc.assem(np.array([edges_conv[i], edges_conv[i+1]]), K, Kce)
+    fb[edges_conv[i]] += fe
+    fb[edges_conv[i + 1]] += fe
+
+edges_flux = bdofs[MARK_FLUX]
+for i in range(len(edges_flux) - 1):
+    L_nodes = dist(coords[edges_flux[i]], coords[edges_flux[i + 1]])
+    fe = h*L_nodes/2
+    fb[edges_flux[i]] += fe
+    fb[edges_flux[i+1]] += fe
+
+print(fb)
+bcPresc = np.array([], 'i')
+a, r = cfc.solveq(K, fb, bcPresc)
+cfv.draw_nodal_values_shaded(a, coords, edof)
+cfv.colorbar()
+plt.set_cmap("inferno")
+cfv.show_and_wait()
