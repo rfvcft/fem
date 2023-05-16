@@ -13,7 +13,7 @@ MARK_FLUX = 2
 MARK_NOFLUX = 3
 
 def create_mesh(draw=True):
-    L = 5 * 10e-3
+    L = 5 * 10**-3
     a = 0.1*L
     b = 0.1*L
     c = 0.3*L
@@ -75,7 +75,7 @@ def create_mesh(draw=True):
     mesh = cfm.GmshMesh(g)
     mesh.elType = 2
     mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 0.05
+    mesh.elSizeFactor = 0.02
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -103,7 +103,7 @@ NELEM, NDOF = len(edof), len(dofs)
 k_copper = 385
 k_nylon = 0.26
 alpha_c = 40
-h = 10e5
+h = 1e5
 T_inf = 18 + 273.15
 
 
@@ -111,7 +111,6 @@ K = np.zeros((NDOF, NDOF))
 fb = np.zeros((NDOF, 1))
 
 ex, ey = cfc.coord_extract(edof, coords, dofs)
-
 for i in np.arange(0, NELEM):
     if elementmarkers[i] == MARK_NYLON: # Nylon
         Ke = cfc.flw2te(ex[i], ey[i], [1], k_nylon*np.eye(2))
@@ -129,8 +128,16 @@ for i in np.arange(0, NELEM):
 #     fb[edges_conv[i] - 1] += fe
 #     fb[edges_conv[i + 1] - 1] += fe
 
+# edges_flux = bdofs[MARK_FLUX]
+# print(edges_flux)
+# for i in range(len(edges_flux) - 1):
+#     L_nodes = dist(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
+#     fe = h*L_nodes/2
+#     fb[edges_flux[i] - 1] += fe
+#     fb[edges_flux[i+1] - 1] += fe
+#     print(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
+
 for element in edof:
-        Kce = np.zeros((2, 2))
         in_boundary_qn = [False, False, False]
         in_boundary_qh = [False, False, False]
         for i in range(3):
@@ -152,14 +159,6 @@ for element in edof:
                     fb[element[j]-1] += h*Le/2
 
 
-# edges_flux = bdofs[MARK_FLUX]
-# print(edges_flux)
-# for i in range(len(edges_flux) - 1):
-#     L_nodes = dist(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
-#     fe = h*L_nodes/2
-#     fb[edges_flux[i] - 1] += fe
-#     fb[edges_flux[i+1] - 1] += fe
-#     print(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
 
 bcPresc = np.array([], 'i')
 a, r = cfc.solveq(K, fb, bcPresc)
