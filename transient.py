@@ -57,9 +57,16 @@ def create_mesh(draw=True):
     g.spline([0, 1], marker=MARK_NOFLUX)
     g.spline([1, 2], marker=MARK_NOFLUX)
     g.spline([2, 3], marker=MARK_FLUX)
-    for i in range(3, 13):
-        g.spline([i, i+1], marker=MARK_CONVECTION)
-    # g.spline([12, 13], marker=MARK_NOFLUX)
+    g.spline([3, 4], marker=MARK_NOFLUX)
+    g.spline([4, 5], marker=MARK_CONVECTION)
+    g.spline([5, 6], marker=MARK_CONVECTION)
+    g.spline([6, 7], marker=MARK_CONVECTION)
+    g.spline([7, 8], marker=MARK_CONVECTION)
+    g.spline([8, 9], marker=MARK_CONVECTION)
+    g.spline([9, 10], marker=MARK_CONVECTION)
+    g.spline([10, 11], marker=MARK_NOFLUX)
+    g.spline([11, 12], marker=MARK_CONVECTION)
+    g.spline([12, 13], marker=MARK_CONVECTION)
     g.spline([13, 14], marker=MARK_NOFLUX)
     g.spline([14, 0], marker=MARK_NOFLUX)
 
@@ -76,7 +83,7 @@ def create_mesh(draw=True):
     mesh = cfm.GmshMesh(g)
     mesh.elType = 2
     mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 0.1
+    mesh.elSizeFactor = 0.03
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -105,7 +112,7 @@ k_copper = 385
 k_nylon = 0.26
 alpha_c = 40
 h = 1e5
-T_inf = 18 + 273.15
+T_inf = 18
 
 K = np.zeros((NDOF, NDOF))
 fb = np.zeros((NDOF, 1))
@@ -157,13 +164,14 @@ for element in edof:
                     fb[element[i]-1] += h*Le/2
                     fb[element[j]-1] += h*Le/2
 
-a = (18 + 273.15) * np.ones((NDOF, 1))
-dt = 0.01
-tf = 10
+a = 18 * np.ones((NDOF, 1))
+dt = 0.1
+tf = 2.4            
 rho_nylon = 1100
 rho_copper = 8930
 c_nylon = 1500
 c_copper = 386
+stat_temp = 143.8
 C = np.zeros((NDOF, NDOF))
 for i in np.arange(0, NELEM):
     if elementmarkers[i] == MARK_NYLON: # Nylon
@@ -172,13 +180,32 @@ for i in np.arange(0, NELEM):
         Ce = plantml(ex[i], ey[i], rho_copper * c_copper)
     cfc.assem(edof[i,:], C, Ce)
 
+j = 1
 for t in np.arange(0, tf, step=dt):
     a = np.linalg.solve(C + dt*K, C @ a + dt*fb)
+    if t > j * 0.44:
+        plt.figure()
+        cfv.draw_nodal_values_shaded(a, coords * 10**3, edof)
+        cbar = cfv.colorbar()
+        cbar.set_label('Temperature [°C]', rotation=90)
+        plt.title(f"Time = {float(t):.1f} s")   
+        plt.xlabel('Length [mm]')
+        plt.ylabel('Length [mm]')
+        plt.set_cmap("inferno")
+        j += 1
+    if np.max(a) > 0.9 * stat_temp:
+        print(t)
+        break
 
 
 # bcPresc = np.array([], 'i')
 # a, r = cfc.solveq(K, fb, bcPresc)
-cfv.draw_nodal_values_shaded(a, coords, edof)
-cfv.colorbar()
-plt.set_cmap("inferno")
+print(j)
+# cfv.draw_nodal_values_shaded(a, coords*10**3, edof)
+# cbar = cfv.colorbar()
+# cbar.set_label('Temperature [°C]', rotation=90)
+# plt.title(f"Time = {float(t):.1f} s")   
+# plt.xlabel('Length [mm]')
+# plt.ylabel('Length [mm]')
+# plt.set_cmap("inferno")
 cfv.show_and_wait()
