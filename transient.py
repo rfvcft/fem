@@ -76,7 +76,7 @@ def create_mesh(draw=True):
     mesh = cfm.GmshMesh(g)
     mesh.elType = 2
     mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 0.1
+    mesh.elSizeFactor = 0.05
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -101,11 +101,12 @@ def create_mesh(draw=True):
 coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
 
 NELEM, NDOF = len(edof), len(dofs)
+OK = 273.15
 k_copper = 385
 k_nylon = 0.26
 alpha_c = 40
 h = 1e5
-T_inf = 18 + 273.15
+T_inf = 18 + OK
 
 K = np.zeros((NDOF, NDOF))
 fb = np.zeros((NDOF, 1))
@@ -117,24 +118,6 @@ for i in np.arange(0, NELEM):
     else: # Copper
         Ke = cfc.flw2te(ex[i], ey[i], [1], k_copper*np.eye(2))
     cfc.assem(edof[i,:], K, Ke)
-
-# edges_conv = bdofs[MARK_CONVECTION]
-# for i in range(len(edges_conv) - 1):
-# # for i in range(11):
-#     L_nodes = dist(coords[edges_conv[i] - 1], coords[edges_conv[i + 1] - 1])
-#     Kce = alpha_c * L_nodes / 6 * np.array([[2, 1], [1, 2]])
-#     fe = T_inf*alpha_c*L_nodes/2 #* np.ones((2, 1))
-#     cfc.assem(np.array([edges_conv[i], edges_conv[i+1]]), K, Kce)
-#     fb[edges_conv[i] - 1] += fe
-#     fb[edges_conv[i + 1] - 1] += fe
-
-# edges_flux = bdofs[MARK_FLUX]
-# print(edges_flux)
-# for i in range(len(edges_flux) - 1):
-#     L_nodes = dist(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
-#     fe = h*L_nodes/2
-#     fb[edges_flux[i] - 1] += fe
-#     fb[edges_flux[i+1] - 1] += fe
 
 for element in edof:
         in_boundary_qn = [False, False, False]
@@ -149,36 +132,40 @@ for element in edof:
                 if in_boundary_qn[i] and in_boundary_qn[j]:
                     Le = dist(coords[element[i] - 1], coords[element[j] - 1])
                     Kce = alpha_c*Le/6*np.array([[2, 1], [1, 2]])
-                    fb[element[i]-1] += alpha_c*Le*T_inf/2
-                    fb[element[j]-1] += alpha_c*Le*T_inf/2
+                    fb[element[i]-1] += alpha_c * Le * T_inf/2
+                    fb[element[j]-1] += alpha_c * Le * T_inf/2
                     cfc.assem(np.array([element[i], element[j]]), K, Kce)
                 if in_boundary_qh[i] and in_boundary_qh[j]:
                     Le = dist(coords[element[i] - 1], coords[element[j] - 1])
-                    fb[element[i]-1] += h*Le/2
-                    fb[element[j]-1] += h*Le/2
+                    fb[element[i]-1] += h * Le/2
+                    fb[element[j]-1] += h * Le/2
 
-a = (18 + 273.15) * np.ones((NDOF, 1))
-dt = 0.01
-tf = 10
+a_stationary = np.linalg.solve(K, fb)
+a_max = np.max(a_stationary)
+
+a = (18 + OK) * np.ones((NDOF, 1))
+# bcPresc = np.array([], 'i')
+# a, r = cfc.solveq(K, fb, bcPresc)
+dt = 0.1
+tf = 200
 rho_nylon = 1100
 rho_copper = 8930
 c_nylon = 1500
-c_copper = 386
+c_copper = 3860
 C = np.zeros((NDOF, NDOF))
 for i in np.arange(0, NELEM):
     if elementmarkers[i] == MARK_NYLON: # Nylon
         Ce = plantml(ex[i], ey[i], rho_nylon * c_nylon)
     else: # Copper
         Ce = plantml(ex[i], ey[i], rho_copper * c_copper)
-    cfc.assem(edof[i,:], C, Ce)
+    cfc.assem(edof[i], C, Ce)
 
 for t in np.arange(0, tf, step=dt):
     a = np.linalg.solve(C + dt*K, C @ a + dt*fb)
 
-
-# bcPresc = np.array([], 'i')
 # a, r = cfc.solveq(K, fb, bcPresc)
 cfv.draw_nodal_values_shaded(a, coords, edof)
 cfv.colorbar()
 plt.set_cmap("inferno")
+
 cfv.show_and_wait()

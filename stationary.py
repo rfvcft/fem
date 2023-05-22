@@ -13,7 +13,8 @@ MARK_FLUX = 2
 MARK_NOFLUX = 3
 
 def create_mesh(draw=True):
-    L = 5 * 10**-3
+    # L = 5 * 10**-3
+    L = 0.005
     a = 0.1*L
     b = 0.1*L
     c = 0.3*L
@@ -75,7 +76,7 @@ def create_mesh(draw=True):
     mesh = cfm.GmshMesh(g)
     mesh.elType = 2
     mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 0.02
+    mesh.elSizeFactor = 0.05
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -97,14 +98,14 @@ def create_mesh(draw=True):
         cfv.showAndWait()
     return coords, edof, dofs, bdofs, elementmarkers
 
-coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=True)
+coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
 
 NELEM, NDOF = len(edof), len(dofs)
 k_copper = 385
 k_nylon = 0.26
 alpha_c = 40
-h = 1e5
-T_inf = 18 + 273.15
+h = 10**5
+T_inf = 18
 
 
 K = np.zeros((NDOF, NDOF))
@@ -145,11 +146,11 @@ for element in edof:
                 in_boundary_qn[i] = True
             if element[i] in bdofs[MARK_FLUX]:
                 in_boundary_qh[i] = True
-        for i in range(3):
+        for i in range(2):
             for j in range(i + 1, 3):
                 if in_boundary_qn[i] and in_boundary_qn[j]:
                     Le = dist(coords[element[i] - 1], coords[element[j] - 1])
-                    Kce = alpha_c*Le/6*np.array([[2, 1], [1, 2]])
+                    Kce = alpha_c*Le/6 * np.array([[2, 1], [1, 2]])
                     fb[element[i]-1] += alpha_c*Le*T_inf/2
                     fb[element[j]-1] += alpha_c*Le*T_inf/2
                     cfc.assem(np.array([element[i], element[j]]), K, Kce)
@@ -161,7 +162,8 @@ for element in edof:
 
 
 bcPresc = np.array([], 'i')
-a, r = cfc.solveq(K, fb, bcPresc)
+# a, r = cfc.solveq(K, fb, bcPresc)
+a = np.linalg.solve(K, fb)
 cfv.draw_nodal_values_shaded(a, coords, edof)
 cfv.colorbar()
 plt.set_cmap("inferno")
