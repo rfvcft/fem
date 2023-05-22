@@ -13,8 +13,7 @@ MARK_FLUX = 2
 MARK_NOFLUX = 3
 
 def create_mesh(draw=True):
-    # L = 5 * 10**-3
-    L = 0.005
+    L = 5 * 0.001
     a = 0.1*L
     b = 0.1*L
     c = 0.3*L
@@ -57,9 +56,18 @@ def create_mesh(draw=True):
     g.spline([0, 1], marker=MARK_NOFLUX)
     g.spline([1, 2], marker=MARK_NOFLUX)
     g.spline([2, 3], marker=MARK_FLUX)
-    for i in range(3, 13):
-        g.spline([i, i+1], marker=MARK_CONVECTION)
-    # g.spline([12, 13], marker=MARK_NOFLUX)
+    g.spline([3, 4], marker=MARK_NOFLUX)
+    # for i in range(4,9):
+    #     g.spline([i, i+1], marker=MARK_CONVECTION)
+    g.spline([4, 5], marker=MARK_CONVECTION)
+    g.spline([5, 6], marker=MARK_CONVECTION)
+    g.spline([6, 7], marker=MARK_CONVECTION)
+    g.spline([7, 8], marker=MARK_CONVECTION)
+    g.spline([8, 9], marker=MARK_CONVECTION)
+    g.spline([9, 10], marker=MARK_CONVECTION)
+    g.spline([10, 11], marker=MARK_NOFLUX)
+    g.spline([11, 12], marker=MARK_CONVECTION)
+    g.spline([12, 13], marker=MARK_CONVECTION)
     g.spline([13, 14], marker=MARK_NOFLUX)
     g.spline([14, 0], marker=MARK_NOFLUX)
 
@@ -76,7 +84,7 @@ def create_mesh(draw=True):
     mesh = cfm.GmshMesh(g)
     mesh.elType = 2
     mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 0.05
+    mesh.elSizeFactor = 0.03
 
     coords, edof, dofs, bdofs, elementmarkers = mesh.create()
 
@@ -93,7 +101,7 @@ def create_mesh(draw=True):
             dofs_per_node=mesh.dofsPerNode,
             el_type=mesh.elType,
             filled=True,
-            title="Example 01"
+            title="Mesh"
                 )
         cfv.showAndWait()
     return coords, edof, dofs, bdofs, elementmarkers
@@ -103,6 +111,8 @@ coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
 NELEM, NDOF = len(edof), len(dofs)
 k_copper = 385
 k_nylon = 0.26
+c_nylon = 1500
+c_copper = 386
 alpha_c = 40
 h = 10**5
 T_inf = 18
@@ -114,29 +124,11 @@ fb = np.zeros((NDOF, 1))
 ex, ey = cfc.coord_extract(edof, coords, dofs)
 for i in np.arange(0, NELEM):
     if elementmarkers[i] == MARK_NYLON: # Nylon
-        Ke = cfc.flw2te(ex[i], ey[i], [1], k_nylon*np.eye(2))
-    else: # Copper
+        Ke = cfc.flw2te(ex[i], ey[i], [1], k_nylon * np.eye(2))
+    if elementmarkers[i] == MARK_COPPER: # Copper
         Ke = cfc.flw2te(ex[i], ey[i], [1], k_copper*np.eye(2))
     cfc.assem(edof[i,:], K, Ke)
 
-# edges_conv = bdofs[MARK_CONVECTION]
-# for i in range(len(edges_conv) - 1):
-# # for i in range(11):
-#     L_nodes = dist(coords[edges_conv[i] - 1], coords[edges_conv[i + 1] - 1])
-#     Kce = alpha_c * L_nodes / 6 * np.array([[2, 1], [1, 2]])
-#     fe = T_inf*alpha_c*L_nodes/2 #* np.ones((2, 1))
-#     cfc.assem(np.array([edges_conv[i], edges_conv[i+1]]), K, Kce)
-#     fb[edges_conv[i] - 1] += fe
-#     fb[edges_conv[i + 1] - 1] += fe
-
-# edges_flux = bdofs[MARK_FLUX]
-# print(edges_flux)
-# for i in range(len(edges_flux) - 1):
-#     L_nodes = dist(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
-#     fe = h*L_nodes/2
-#     fb[edges_flux[i] - 1] += fe
-#     fb[edges_flux[i+1] - 1] += fe
-#     print(coords[edges_flux[i] - 1], coords[edges_flux[i + 1] - 1])
 
 for element in edof:
         in_boundary_qn = [False, False, False]
@@ -162,9 +154,11 @@ for element in edof:
 
 
 bcPresc = np.array([], 'i')
-# a, r = cfc.solveq(K, fb, bcPresc)
-a = np.linalg.solve(K, fb)
-cfv.draw_nodal_values_shaded(a, coords, edof)
-cfv.colorbar()
+a, r = cfc.solveq(K, fb, bcPresc)
+cfv.draw_nodal_values_shaded(a, coords*10**3, edof)
+cbar = cfv.colorbar()
+cbar.set_label('Temperature [°C]', rotation=90)
+plt.xlabel('Length [mm]')
+plt.ylabel('Length [mm]')
 plt.set_cmap("inferno")
 cfv.show_and_wait()
