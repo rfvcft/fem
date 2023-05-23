@@ -79,8 +79,9 @@ def create_mesh(draw=True, dofs_per_node=1, element_size_factor = 0.03):
     mesh.elType = 2
     mesh.dofsPerNode = dofs_per_node
     mesh.elSizeFactor = element_size_factor
+    mesh.return_boundary_elements = True
 
-    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+    coords, edof, dofs, bdofs, elementmarkers, boundary_elements = mesh.create()
 
     # Draw the mesh.
 
@@ -95,4 +96,4 @@ def create_mesh(draw=True, dofs_per_node=1, element_size_factor = 0.03):
             title="Mesh for gripper"
                 )
         cfv.showAndWait()
-    return coords, edof, dofs, bdofs, elementmarkers
+    return coords, edof, dofs, bdofs, elementmarkers, boundary_elements

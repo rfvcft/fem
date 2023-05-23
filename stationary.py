@@ -6,7 +6,10 @@ from math import dist
 from create_mesh import create_mesh, MARK_NYLON, MARK_COPPER, MARK_CONVECTION, MARK_FLUX
 
 def stationary_solver(draw_mesh=False, draw=False):
-    coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=draw_mesh, element_size_factor=0.007)
+    coords, edof, dofs, bdofs, elementmarkers, boundary_elements = create_mesh(draw=draw_mesh, element_size_factor=0.007)
+    # print(boundary_elements)
+    # print(boundary_elements[3])
+    # print(boundary_elements[3][0]['node-number-list'])
 
     NELEM, NDOF = len(edof), len(dofs)
     k_copper = 385
@@ -27,29 +30,20 @@ def stationary_solver(draw_mesh=False, draw=False):
             Ke = cfc.flw2te(ex[i], ey[i], [1], k_copper*np.eye(2))
         cfc.assem(edof[i,:], K, Ke)
 
+    nodes_conv = [node['node-number-list'] for node in boundary_elements[MARK_CONVECTION]]
+    nodes_flux = [node['node-number-list'] for node in boundary_elements[MARK_FLUX]]
 
-    for element in edof:
-            in_boundary_qn = [False, False, False]
-            in_boundary_qh = [False, False, False]
-            for i in range(3):
-                if element[i] in bdofs[MARK_CONVECTION]:
-                    in_boundary_qn[i] = True
-                if element[i] in bdofs[MARK_FLUX]:
-                    in_boundary_qh[i] = True
-            for i in range(2):
-                for j in range(i + 1, 3):
-                    if in_boundary_qn[i] and in_boundary_qn[j]:
-                        Le = dist(coords[element[i] - 1], coords[element[j] - 1])
-                        Kce = alpha_c*Le/6 * np.array([[2, 1], [1, 2]])
-                        fb[element[i]-1] += alpha_c*Le*T_inf/2
-                        fb[element[j]-1] += alpha_c*Le*T_inf/2
-                        cfc.assem(np.array([element[i], element[j]]), K, Kce)
-                    if in_boundary_qh[i] and in_boundary_qh[j]:
-                        Le = dist(coords[element[i] - 1], coords[element[j] - 1])
-                        fb[element[i]-1] += h*Le/2
-                        fb[element[j]-1] += h*Le/2
+    for node in nodes_conv:
+        Le = dist(coords[node[0] - 1], coords[node[1] - 1])
+        Kce = alpha_c*Le/6 * np.array([[2, 1], [1, 2]])
+        fb[node[0]-1] += alpha_c*Le*T_inf/2
+        fb[node[1]-1] += alpha_c*Le*T_inf/2
+        cfc.assem(np.array([node[0], node[1]]), K, Kce)
 
-
+    for node in nodes_flux:
+        Le = dist(coords[node[0] - 1], coords[node[1] - 1])
+        fb[node[0]-1] += h*Le/2
+        fb[node[1]-1] += h*Le/2
 
     bcPresc = np.array([], 'i')
     a, _ = cfc.solveq(K, fb, bcPresc)
