@@ -2,6 +2,7 @@ import calfem.geometry as cfg
 import calfem.mesh as cfm
 import calfem.vis_mpl as cfv
 
+# Values for surface- and boundary-marks
 MARK_NYLON = 11
 MARK_COPPER = 12
 MARK_CONVECTION = 1
@@ -10,8 +11,9 @@ MARK_CLAMP = 3
 MARK_XCLAMP = 4
 MARK_YCLAMP = 5
 
+L = 5 * 10**-3
+
 def define_geometry():
-    L = 5 * 10**-3
     a = 0.1*L
     b = 0.1*L
     c = 0.3*L
@@ -21,13 +23,12 @@ def define_geometry():
 
     g = cfg.Geometry()
 
-    # Nylon element
     NYLON_NBR_POINTS = 8
+    COPPER_NBR_POINTS = 14
+
+    # Declare points
     g.point([0, 0])
     g.point([0, 0.5*L - a - b])
-
-    # Copper element
-    COPPER_NBR_POINTS = 14
     g.point([0, 0.5*L - b])
     g.point([0, 0.5*L])
     g.point([a, 0.5*L])
@@ -47,6 +48,7 @@ def define_geometry():
     g.point([a + t, 0.5*L - a - b])
     g.point([c + d, 0.5*L - a - b])
 
+    # Declare edges (with marks where necessary)
     g.spline([0, 1], marker=MARK_CLAMP)
     g.spline([1, 2], marker=MARK_CLAMP)
     g.spline([2, 3], marker=MARK_FLUX)
@@ -67,8 +69,9 @@ def define_geometry():
         g.spline([COPPER_NBR_POINTS + i, COPPER_NBR_POINTS + i + 1])
     g.spline([19, 14])
 
-    g.surface([0] + list(range(15, 21)) + [14], marker=MARK_NYLON) # Nylon
-    g.surface(list(range(1, 14)) + list(reversed(range(15, 21))), marker=MARK_COPPER) # Copper
+    # Declare the two types of surfaces
+    g.surface([0] + list(range(15, 21)) + [14], marker=MARK_NYLON)                      # Nylon
+    g.surface(list(range(1, 14)) + list(reversed(range(15, 21))), marker=MARK_COPPER)   # Copper
 
     return g
 
