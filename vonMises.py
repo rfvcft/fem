@@ -1,178 +1,119 @@
-import calfem.geometry as cfg
-import calfem.mesh as cfm
 import calfem.vis_mpl as cfv
 import calfem.core as cfc
+import calfem.utils as cfu
 import numpy as np
-from matplotlib import pyplot as plt
-from math import dist
+from create_mesh import create_mesh, MARK_NYLON, MARK_FLUX, MARK_XCLAMP, MARK_YCLAMP, MARK_CLAMP
+from stationary import stationary_solver
 
-MARK_NYLON = 11
-MARK_COPPER = 12
-MARK_CONVECTION = 1
-MARK_FLUX = 2
-MARK_NOFLUX = 3
+def vonMises_solver():
+    _, K, f, ex, ey, coords, edof, dofs, _, elementmarkers = stationary_solver()
+    NELEM, NDOF = len(edof), len(dofs)
 
-def create_mesh(draw=True):
-    L = 5 * 10**-3
-    a = 0.1*L
-    b = 0.1*L
-    c = 0.3*L
-    d = 0.05*L
-    h = 0.15*L
-    t = 0.05*L
+    bcPresc = np.array([], 'i')
+    a, r = cfc.solveq(K, f, bcPresc)
 
-    g = cfg.Geometry()
+    ### von Mises stress
+    T_inf = 18
+    E_copper = 128
+    E_nylon = 3
+    v_copper = 0.36
+    v_nylon = 0.39
+    alpha_copper = 17.6 * 10**-6
+    alpha_nylon = 80 * 10**-6
+    NDOF_S = 2*NDOF
+    edof_S = np.zeros((NELEM, 6), dtype=int)
+    bdofs_S = dict()
 
-    # Nylon element
-    NYLON_NBR_POINTS = 8
-    g.point([0, 0])
-    g.point([0, 0.5*L - a - b])
+    _, edof_S, dofs_S, bdofs_S, _ = create_mesh(draw=False, dofs_per_node=2, element_size_factor=0.007)
 
-    # Copper element
-    COPPER_NBR_POINTS = 14
-    g.point([0, 0.5*L - b])
-    g.point([0, 0.5*L])
-    g.point([a, 0.5*L])
-    g.point([a, 0.5*L - b])
-    g.point([a + c, 0.5*L - b])
-    g.point([a + c + d, 0.5*L - b - d])
-    g.point([a + c + d, d])
-    g.point([L - 2*d, c])
-    g.point([L, c])
-    g.point([L, c - d])
-    g.point([L - 2*d, c - d])
-    g.point([a + c + d, 0])
-    g.point([c + d, 0])
+    def Dmatrix(E, v):
+        return E/((1+v)*(1-2*v)) * np.array([[1-v, v, 0],
+                                             [v, 1-v, 0],
+                                             [0, 0, 0.5*(1-2*v)]])
 
-    g.point([a, 0.5*L - a - b])
-    g.point([a, 0.5*L - a - b - h])
-    g.point([a + t, 0.5*L - a - b - h])
-    g.point([a + t, 0.5*L - a - b])
-    g.point([c + d, 0.5*L - a - b])
+    D_copper = Dmatrix(E_copper, v_copper)
+    D_nylon = Dmatrix(E_nylon, v_nylon)
 
-    # for i in range(COPPER_NBR_POINTS):
-    #     g.spline([i, i+1])
-    # g.spline([COPPER_NBR_POINTS, 0])
-    g.spline([0, 1], marker=MARK_NOFLUX)
-    g.spline([1, 2], marker=MARK_NOFLUX)
-    g.spline([2, 3], marker=MARK_FLUX)
-    for i in range(3, 13):
-        g.spline([i, i+1], marker=MARK_CONVECTION)
-    # g.spline([12, 13], marker=MARK_NOFLUX)
-    g.spline([13, 14], marker=MARK_NOFLUX)
-    g.spline([14, 0], marker=MARK_NOFLUX)
+    Ks = np.zeros((NDOF_S, NDOF_S))
+    fs0 = np.zeros((NDOF_S, 1))
 
-    g.spline([1, COPPER_NBR_POINTS + 1])
-    for i in range(1, NYLON_NBR_POINTS - 3):
-        g.spline([COPPER_NBR_POINTS + i, COPPER_NBR_POINTS + i + 1])
-    g.spline([19, 14])
+    for i in np.arange(0, NELEM):
+        deltaT = np.sum([a[edof[i][j] - 1] for j in range(3)])/3 - T_inf
+        if elementmarkers[i] == MARK_NYLON: # Nylon
+            Kse = cfc.plante(ex[i], ey[i], [2, 1], D_nylon)
+            epsilon_dT = alpha_nylon * deltaT * np.array([[1], [1], [0]])
+            fs0e = cfc.plantf(ex[i], ey[i], [2, 1], (D_nylon @ epsilon_dT).T)
+        else: # Copper
+            Kse = cfc.plante(ex[i], ey[i], [2, 1], D_copper)
+            epsilon_dT = alpha_copper * deltaT * np.array([[1], [1], [0]])
+            fs0e = cfc.plantf(ex[i], ey[i], [2, 1], (D_nylon @ epsilon_dT).T)
+        for j in range(6):
+            fs0[edof_S[i][j] - 1] += fs0e[j]
+        cfc.assem(edof_S[i], Ks, Kse)
 
-    g.surface([0] + list(range(15, 21)) + [14], marker=MARK_NYLON) # Nylon
-    g.surface(list(range(1, 14)) + list(reversed(range(15, 21))), marker=MARK_COPPER) # Copper
+    bc_S = np.array([], 'i')
+    bc_val_S = np.array([], 'f')
+    bc_S, bc_val_S = cfu.apply_bc(bdofs_S, bc_S, bc_val_S, MARK_CLAMP)
+    bc_S, bc_val_S = cfu.apply_bc(bdofs_S, bc_S, bc_val_S, MARK_FLUX)
+    bc_S, bc_val_S = cfu.apply_bc(bdofs_S, bc_S, bc_val_S, MARK_XCLAMP, dimension=1)
+    bc_S, bc_val_S = cfu.apply_bc(bdofs_S, bc_S, bc_val_S, MARK_YCLAMP, dimension=2)
+    a, r = cfc.solveq(Ks, fs0, bc_S)
 
-    # cfv.showAndWait()
+    ed = cfc.extract_eldisp(edof_S, a)
+    vonMises = []
 
-    mesh = cfm.GmshMesh(g)
-    mesh.elType = 2
-    mesh.dofsPerNode = 1
-    mesh.elSizeFactor = 0.02
+    for i in range(NELEM):
+        if elementmarkers[i] == MARK_NYLON:
+            es, et = cfc.plants(ex[i], ey[i], [2, 1], D_nylon, ed[i])
+            E = E_nylon
+            v = v_nylon
+            alpha = alpha_nylon
+        else:
+            es, et = cfc.plants(ex[i], ey[i], [2, 1], D_copper, ed[i])
+            E = E_copper
+            v = v_copper
+            alpha = alpha_copper
+        sigx, sigy, tauxy = es[0]
+        # epsx, epsy, gamxy = et[0]
+        deltaT = np.mean([a[edof[i][j] - 1] for j in range(3)]) - T_inf
+        sigx -= alpha*E*deltaT/(1-2*v)
+        sigy -= alpha*E*deltaT/(1-2*v)
+        # sigz = E*v/((1+v)*(1-2*v))*(epsx + epsy) - alpha*E/(1-2*v)*deltaT
+        sigz = v*(sigx + sigy) - (alpha * E * deltaT)
+        sigz -= alpha*E*deltaT/(1-2*v)
+        vonMises.append(np.sqrt(sigx**2 + sigy**2 + sigz**2 - sigx*sigy - sigx*sigz - sigy*sigz + 3*tauxy**2))
 
-    coords, edof, dofs, bdofs, elementmarkers = mesh.create()
+    node_stresses = np.zeros((NDOF, 1))
+    for i in range(NDOF):
+        x = dofs_S[i][0]
+        idxs = np.where(x == edof_S)[0]
+        node_stresses[i] = np.mean([vonMises[idx] for idx in idxs])
 
+    # cfv.figure((10,10))
+    # cfv.draw_nodal_values_shaded(node_stresses, coords, edof)
 
-    # Draw the mesh.
+    cfv.figure((10,10))
+    magnification = 5
+    L = 0.005
+    flip_y = np.array([([1, -1]*int(a.size/2))]).T
+    flip_x = np.array([([-1, 1]*int(a.size/2))]).T
+    cfv.draw_element_values(vonMises, coords, edof_S, 2, 2, a,
+                            draw_elements=False, draw_undisplaced_mesh=True,
+                            title="Effective Stress", magnfac=magnification)
+    cfv.draw_element_values(vonMises, [0, L]+[1, -1]*coords, edof_S, 2, 2, np.multiply(flip_y, a),
+                            draw_elements=False, draw_undisplaced_mesh=True,
+                            title="Effective Stress", magnfac=magnification)
+    cfv.draw_element_values(vonMises, [2*L, L]+[-1, -1]*coords, edof_S, 2, 2, np.multiply(flip_y*flip_x, a),
+                            draw_elements=False, draw_undisplaced_mesh=True,
+                            title="Effective Stress", magnfac=magnification)
+    cfv.draw_element_values(vonMises, [2*L, 0]+[-1, 1]*coords, edof_S, 2, 2, np.multiply(flip_x, a),
+                            draw_elements=False, draw_undisplaced_mesh=True,
+                            title="Effective Stress", magnfac=magnification)
+    cfv.colorbar()
+    # cfv.draw_displacements(a, coords, edof, 1, 2,
+    #                        draw_undisplaced_mesh=True, title="Example 06 - Displacements",
+    #                        magnfac=2)
+    cfv.show_and_wait()
 
-    if draw:
-        # cfv.figure()
-        cfv.draw_geometry(g)
-        # cfv.figure()
-        cfv.drawMesh(
-            coords=coords,
-            edof=edof,
-            dofs_per_node=mesh.dofsPerNode,
-            el_type=mesh.elType,
-            filled=True,
-            title="Example 01"
-                )
-        cfv.showAndWait()
-    return coords, edof, dofs, bdofs, elementmarkers
-
-coords, edof, dofs, bdofs, elementmarkers = create_mesh(draw=False)
-
-NELEM, NDOF = len(edof), len(dofs)
-k_copper = 385
-k_nylon = 0.26
-alpha_c = 40
-h = 1e5
-T_inf = 18 + 273.15
-
-
-K = np.zeros((NDOF, NDOF))
-fb = np.zeros((NDOF, 1))
-
-ex, ey = cfc.coord_extract(edof, coords, dofs)
-for i in np.arange(0, NELEM):
-    if elementmarkers[i] == MARK_NYLON: # Nylon
-        Ke = cfc.flw2te(ex[i], ey[i], [1], k_nylon*np.eye(2))
-    else: # Copper
-        Ke = cfc.flw2te(ex[i], ey[i], [1], k_copper*np.eye(2))
-    cfc.assem(edof[i,:], K, Ke)
-
-for element in edof:
-        in_boundary_qn = [False, False, False]
-        in_boundary_qh = [False, False, False]
-        for i in range(3):
-            if element[i] in bdofs[MARK_CONVECTION]:
-                in_boundary_qn[i] = True
-            if element[i] in bdofs[MARK_FLUX]:
-                in_boundary_qh[i] = True
-        for i in range(3):
-            for j in range(i + 1, 3):
-                if in_boundary_qn[i] and in_boundary_qn[j]:
-                    Le = dist(coords[element[i] - 1], coords[element[j] - 1])
-                    Kce = alpha_c*Le/6*np.array([[2, 1], [1, 2]])
-                    fb[element[i]-1] += alpha_c*Le*T_inf/2
-                    fb[element[j]-1] += alpha_c*Le*T_inf/2
-                    cfc.assem(np.array([element[i], element[j]]), K, Kce)
-                if in_boundary_qh[i] and in_boundary_qh[j]:
-                    Le = dist(coords[element[i] - 1], coords[element[j] - 1])
-                    fb[element[i]-1] += h*Le/2
-                    fb[element[j]-1] += h*Le/2
-
-bcPresc = np.array([], 'i')
-a, r = cfc.solveq(K, fb, bcPresc)
-
-### von Mises stress
-
-E_copper = 128
-E_nylon = 3
-v_copper = 0.36
-v_nylon = 0.39
-alpha_copper = 17.6 * 10**-6
-alpha_nylon = 80 * 10**-6
-NDOF_S = 2*NDOF
-edof_S = np.zeros((NELEM, 6), dtype=int)
-
-for i in range(NELEM):
-    edof_S[i] = [edof[i][0], edof[i][0] + NDOF,
-                 edof[i][1], edof[i][1] + NDOF,
-                 edof[i][2], edof[i][2] + NDOF]
-
-def Dmatrix(E, v):
-    return E/((1+v)*(1-2*v)) * np.array([[1-v, v, 0],
-                                         [v, 1-v, 0],
-                                         [0, 0, 0.5*(1-2*v)]])
-
-D_copper = Dmatrix(E_copper, v_copper)
-D_nylon = Dmatrix(E_nylon, v_nylon)
-
-Ks = np.zeros((NDOF_S, NDOF_S))
-fs0 = np.zeros((NDOF_S, 1))
-
-for i in np.arange(0, NELEM):
-    if elementmarkers[i] == MARK_NYLON: # Nylon
-        Kse = cfc.plante(ex[i], ey[i], [2, 1], D_nylon)
-    else: # Copper
-        Kse = cfc.plante(ex[i], ey[i], [2, 1], D_copper)
-    cfc.assem(edof_S[i], Ks, Kse)
-
+if __name__ == '__main__':
+    vonMises_solver()
