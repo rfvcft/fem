@@ -52,7 +52,7 @@ def stationary_solver(draw_mesh=False, draw=False, element_size_factor=0.03):
     a, _ = cfc.solveq(K, fb, bcPresc)
 
     if draw:
-        cfv.draw_nodal_values_shaded(a, coords*10**3, edof)
+        cfv.draw_nodal_values_shaded(a, coords*10**3, edof, title="Stationary teperature distribution")
         cbar = cfv.colorbar()
         cbar.set_label('Temperature [°C]', rotation=90)
         plt.xlabel('Length [mm]')

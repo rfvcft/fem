@@ -1,6 +1,7 @@
 import calfem.geometry as cfg
 import calfem.mesh as cfm
 import calfem.vis_mpl as cfv
+from matplotlib import pyplot as plt
 
 # Values for surface- and boundary-marks
 MARK_NYLON = 11
@@ -89,14 +90,16 @@ def create_mesh(draw=True, dofs_per_node=1, element_size_factor = 0.03):
     # Draw the mesh.
 
     if draw:
-        cfv.draw_geometry(g)
+        cfv.draw_geometry(g, draw_points=False, label_points=False, label_curves=False, draw_axis=True)
         cfv.drawMesh(
-            coords=coords,
+            coords=coords*10**3,
             edof=edof,
             dofs_per_node=mesh.dofsPerNode,
             el_type=mesh.elType,
-            filled=True,
-            title="Mesh for gripper"
+            filled=False,
+            title=f"Mesh for gripper, element size factor: {element_size_factor}"
                 )
+        plt.xlabel('Length [mm]')
+        plt.ylabel('Length [mm]')
         cfv.showAndWait()
     return coords, edof, dofs, bdofs, elementmarkers, boundary_elements

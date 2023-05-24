@@ -2,11 +2,12 @@ import calfem.vis_mpl as cfv
 import calfem.core as cfc
 import calfem.utils as cfu
 import numpy as np
+from matplotlib import pyplot as plt
 from create_mesh import MARK_NYLON, MARK_FLUX, MARK_XCLAMP, MARK_YCLAMP, MARK_CLAMP, L
 from stationary import stationary_solver
 
 def vonMises_solver():
-    a_stat, _, _, ex, ey, coords, edof, dofs, bdofs, elementmarkers = stationary_solver(element_size_factor=0.007)
+    a_stat, _, _, ex, ey, coords, edof, dofs, bdofs, elementmarkers = stationary_solver(element_size_factor=0.03)
     NELEM, NDOF = len(edof), len(dofs)
 
     T_inf = 18
@@ -46,18 +47,18 @@ def vonMises_solver():
     Ks = np.zeros((NDOF_S, NDOF_S))
     fs0 = np.zeros((NDOF_S, 1))
 
-    def create_element_values(ex, ey, alpha, D):
+    def create_element_values(ex, ey, alpha, dT, D):
         Ke = cfc.plante(ex, ey, [2, 1], D)
-        epsilon_dT = alpha * deltaT * np.array([[1], [1], [0]])
+        epsilon_dT = alpha * dT * np.array([[1], [1], [0]])
         fe = cfc.plantf(ex, ey, [2, 1], (D @ epsilon_dT).T)
         return Ke, fe
 
     for i in range(NELEM):
         deltaT = np.mean([a_stat[edof[i][j] - 1] for j in range(3)]) - T_inf # Average increase in temperature for an element
         if elementmarkers[i] == MARK_NYLON: # Nylon
-            Kse, fs0e = create_element_values(ex[i], ey[i], alpha_nylon, D_nylon)
+            Kse, fs0e = create_element_values(ex[i], ey[i], alpha_nylon, deltaT, D_nylon)
         else:                               # Copper
-            Kse, fs0e = create_element_values(ex[i], ey[i], alpha_copper, D_copper)
+            Kse, fs0e = create_element_values(ex[i], ey[i], alpha_copper, deltaT, D_copper)
 
         # Add the forces to the force vector f0
         for j in range(6):
@@ -78,7 +79,7 @@ def vonMises_solver():
 
     # Create the von Mises stress
     ed = cfc.extract_eldisp(edof_S, a_S)
-    vonMises = []
+    vonMises = np.zeros(NELEM)
     for i in range(NELEM):
         if elementmarkers[i] == MARK_NYLON: # Nylon
             D_nylon = cfc.hooke(2, E_nylon, v_nylon)
@@ -97,7 +98,7 @@ def vonMises_solver():
         sigy -= k_T
         sigz -= k_T
         stress = np.sqrt(sigx**2 + sigy**2 + sigz**2 - sigx*sigy - sigx*sigz - sigy*sigz + 3*tauxy**2)
-        vonMises.append(stress)
+        vonMises[i] = stress
 
     # Calculate the stress for each node by averaging the stress for all elements the node is included in
     node_stresses = np.zeros((NDOF, 1))
@@ -107,23 +108,37 @@ def vonMises_solver():
         node_stresses[i] = np.mean([vonMises[idx] for idx in idxs])
 
     cfv.figure((10,10))
-    cfv.draw_nodal_values_shaded(node_stresses, coords, edof)
+    cfv.draw_nodal_values_shaded(node_stresses * 10**-6, coords * 10**3, edof, title="von Mises stress")
+    cbar = cfv.colorbar()
+    cbar.set_label('Stress [MPa]', rotation=90)
+    plt.xlabel('Length [mm]')
+    plt.ylabel('Length [mm]')
 
     # Draw the displacement of the whole gripper
     cfv.figure((10,10))
     magnification = 5
     flip_y = np.array([([1, -1]*int(a_S.size/2))]).T
     flip_x = np.array([([-1, 1]*int(a_S.size/2))]).T
-    cfv.draw_element_values(vonMises, coords, edof_S, 2, 2, a_S,
+    cfv.draw_element_values(vonMises * 10**-6, coords, edof_S, 2, 2, a_S,
                             draw_elements=False, draw_undisplaced_mesh=True,
                             title="Effective Stress, magnification=%ix" % magnification, magnfac=magnification)
-    cfv.draw_element_values(vonMises, [0, L]+[1, -1]*coords, edof_S, 2, 2, np.multiply(flip_y, a_S),
+    cfv.draw_element_values(vonMises * 10**-6, [0, L]+[1, -1]*(coords), edof_S, 2, 2, np.multiply(flip_y, a_S),
                             draw_elements=False, draw_undisplaced_mesh=True, magnfac=magnification)
-    cfv.draw_element_values(vonMises, [2*L, L]+[-1, -1]*coords, edof_S, 2, 2, np.multiply(flip_y*flip_x, a_S),
+    cfv.draw_element_values(vonMises * 10**-6, [2*L, L]+[-1, -1]*(coords), edof_S, 2, 2, np.multiply(flip_y*flip_x, a_S),
                             draw_elements=False, draw_undisplaced_mesh=True, magnfac=magnification)
-    cfv.draw_element_values(vonMises, [2*L, 0]+[-1, 1]*coords, edof_S, 2, 2, np.multiply(flip_x, a_S),
+    cfv.draw_element_values(vonMises * 10**-6, [2*L, 0]+[-1, 1]*(coords), edof_S, 2, 2, np.multiply(flip_x, a_S),
                             draw_elements=False, draw_undisplaced_mesh=True, magnfac=magnification)
-    cfv.colorbar()
+    cbar = cfv.colorbar()
+    cbar.set_label('Stress [MPa]', rotation=90)
+    plt.xlabel('Length [m]')
+    plt.ylabel('Length [m]')
+
+    cfv.figure((10,10))
+    cfv.draw_displacements(a_S, coords, edof, 1, 2, draw_undisplaced_mesh=True,
+                           title="Displacement of mesh", magnfac=magnification)
+    plt.xlabel('Length [m]')
+    plt.ylabel('Length [m]')
+
     cfv.show_and_wait()
 
 if __name__ == '__main__':
